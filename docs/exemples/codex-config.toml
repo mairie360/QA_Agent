@@ -1,0 +1,10 @@
+# Codex CLI (OpenAI): à ajouter à ~/.codex/config.toml, en remplaçant le chemin par celui de votre clone.
+# Codex lit aussi AGENTS.md à la racine du dépôt.
+[mcp_servers.playwright]
+command = "npx"
+args = ["@playwright/mcp@0.0.83", "--browser", "chromium", "--isolated"]
+
+[mcp_servers.qa-observer]
+command = "node"
+args = ["/chemin/absolu/vers/QA_Agent/mcp/server.mjs"]
+cwd = "/chemin/absolu/vers/QA_Agent"

@@ -1,0 +1,17 @@
+# Comptes de seed. `key` = clé naturelle stable (donne l'adresse e-mail: alias de la boîte de test).
+# Ne jamais réutiliser une clé pour une autre personne. Pour ajouter quelqu'un: nouvelle clé.
+items:
+  - { key: maire,            first_name: Hélène,   last_name: Marchand,  roles: [Maire] }
+  - { key: dgs,              first_name: Philippe, last_name: Rousseau,  roles: [Responsable] }
+  - { key: accueil-1,        first_name: Camille,  last_name: Lefèvre,   roles: [User] }
+  - { key: accueil-2,        first_name: Yasmine,  last_name: Benali,    roles: [User] }
+  - { key: accueil-resp,     first_name: Marc,     last_name: Dubois,    roles: [Responsable] }
+  - { key: rh-resp,          first_name: Nathalie, last_name: Girard,    roles: [Responsable] }
+  - { key: rh-1,             first_name: Julien,   last_name: Moreau,    roles: [User, Référent numérique] }
+  - { key: finances-resp,    first_name: Olivier,  last_name: Fontaine,  roles: [Responsable] }
+  - { key: finances-1,       first_name: Sophie,   last_name: Lambert,   roles: [User] }
+  - { key: finances-2,       first_name: Karim,    last_name: Haddad,    roles: [User] }
+  - { key: urbanisme-resp,   first_name: Isabelle, last_name: Perrin,    roles: [Responsable] }
+  - { key: urbanisme-1,      first_name: Thomas,   last_name: Garnier,   roles: [User], phone: "06 12 34 56 78", phone_country: FR }
+  - { key: stagiaire,        first_name: Léa,      last_name: Bertrand,  roles: [Guest] }
+  - { key: nouvel-arrivant,  first_name: Antoine,  last_name: Petit,     roles: [User] }
