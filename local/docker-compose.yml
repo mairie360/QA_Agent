@@ -1,0 +1,445 @@
+# Toute la plateforme Mairie360 sur ta machine: base + migrations, Redis, e-mails (Mailpit), 5 APIs, 7 BFF, 8 fronts,
+# derrière Traefik en HTTPS. Les images sont celles déployées sur dev (local/images.env, `npm run local:sync-tags`).
+#
+#   npm run local:init     une fois: .env, certificat, vérifs
+#   npm run local:up       démarre tout
+#   https://login.mairie360.localtest.me   (voir README: local/README.md)
+#
+# Pour développer UN service, remplace-le par ton build local: docker-compose.override.example.yml.
+# Variables d'environnement: local/.env (modèle .env.example); images: local/images.env.
+# Modelé sur le chart de Deploiment (mêmes variables, mêmes ports); les différences sont signalées « LOCAL ».
+
+name: mairie360-local
+
+x-restart: &restart
+  restart: unless-stopped
+
+# --- APIs ---------------------------------------------------------------------------------------
+# Chaque API se connecte avec son propre rôle Postgres (créé par la migration), comme dans le cluster.
+x-api-env: &api-env
+  HOST: "0.0.0.0"
+  PORT: "3000"
+  DB_TYPE: postgres
+  DB_HOST: database
+  DB_PORT: "5432"
+  DB_NAME: ${DB_NAME:-mairie_db_local}
+  REDIS_HOST: redis
+  REDIS_PORT: "6379"
+  REDIS_URL: redis://redis:6379 # LOCAL: Redis sans ACL (pas de compte par API ni de préfixe de clés)
+  JWT_SECRET: ${JWT_SECRET:?JWT_SECRET manquant, lancer npm run local:init}
+  JWT_TIMEOUT: "3600"
+  TOKIO_WORKER_THREADS: "2"
+
+x-api-depends: &api-depends
+  liquibase:
+    condition: service_completed_successfully
+  redis:
+    condition: service_healthy
+
+# --- BFF: les URL de toutes les APIs et de tous les BFF (comme bffs.commonEnv du chart) ------------
+x-bff-env: &bff-env
+  HOST: "0.0.0.0"
+  HOSTNAME: "0.0.0.0"
+  NODE_ENV: production
+  NODE_OPTIONS: "--max-old-space-size=200"
+  TRUST_PROXY: "loopback, ${STACK_SUBNET:-172.28.40.0/24}"
+  CORE_API_URL: http://core-api:3000
+  PROJECT_API_URL: http://project-api:3000
+  CALENDAR_API_URL: http://calendar-api:3000
+  MESSAGE_API_URL: http://message-api:3000
+  ELEARNING_API_URL: http://elearning-api:3000
+  USER_BFF_URL: http://user-bff:4000
+  PROJECT_BFF_URL: http://project-bff:4001
+  CALENDAR_BFF_URL: http://calendar-bff:4002
+  MESSAGE_BFF_URL: http://message-bff:4003
+  DASHBOARD_BFF_URL: http://dashboard-bff:4004
+  SETTINGS_BFF_URL: http://settings-bff:4005
+  ELEARNING_BFF_URL: http://elearning-bff:4006
+
+# --- Fronts: les URL publiques de tous les fronts et les URL des BFF (comme fronts.commonEnv) -------
+x-front-env: &front-env
+  HOSTNAME: "0.0.0.0"
+  NODE_ENV: production
+  LOGIN_FRONT_URL: https://login.${LOCAL_DOMAIN:-mairie360.localtest.me}/
+  PROJECT_FRONT_URL: https://project.${LOCAL_DOMAIN:-mairie360.localtest.me}/
+  CALENDAR_FRONT_URL: https://calendar.${LOCAL_DOMAIN:-mairie360.localtest.me}/
+  MESSAGE_FRONT_URL: https://message.${LOCAL_DOMAIN:-mairie360.localtest.me}/
+  DASHBOARD_FRONT_URL: https://dashboard.${LOCAL_DOMAIN:-mairie360.localtest.me}/
+  SETTINGS_FRONT_URL: https://settings.${LOCAL_DOMAIN:-mairie360.localtest.me}/
+  ELEARNING_FRONT_URL: https://elearning.${LOCAL_DOMAIN:-mairie360.localtest.me}/
+  ADMIN_FRONT_URL: https://admin.${LOCAL_DOMAIN:-mairie360.localtest.me}/
+  ADMINISTRATION_FRONT_URL: https://admin.${LOCAL_DOMAIN:-mairie360.localtest.me}/
+  USER_BFF_URL: http://user-bff:4000
+  PROJECT_BFF_URL: http://project-bff:4001
+  CALENDAR_BFF_URL: http://calendar-bff:4002
+  MESSAGE_BFF_URL: http://message-bff:4003
+  DASHBOARD_BFF_URL: http://dashboard-bff:4004
+  SETTINGS_BFF_URL: http://settings-bff:4005
+  ELEARNING_BFF_URL: http://elearning-bff:4006
+
+networks:
+  stack:
+    ipam:
+      config:
+        - subnet: ${STACK_SUBNET:-172.28.40.0/24}
+
+volumes:
+  postgres-data:
+  minio-data:
+
+services:
+  # ============================ Entrée HTTPS ============================
+  traefik:
+    <<: *restart
+    image: traefik:v3.7.13
+    command:
+      - --providers.docker=true
+      - --providers.docker.exposedbydefault=false
+      - --providers.docker.network=mairie360-local_stack
+      - --providers.file.directory=/etc/traefik/dynamic
+      - --entrypoints.web.address=:80
+      - --entrypoints.web.http.redirections.entrypoint.to=websecure
+      - --entrypoints.web.http.redirections.entrypoint.scheme=https
+      - --entrypoints.websecure.address=:443
+      - --log.level=WARN
+    ports:
+      - "${HTTP_PORT:-80}:80"
+      - "${HTTPS_PORT:-443}:443"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro # LOCAL uniquement: Traefik lit les étiquettes des conteneurs
+      - ./traefik/tls.yml:/etc/traefik/dynamic/tls.yml:ro
+      - ./certs:/certs:ro
+    networks: [stack]
+
+  # ============================ Données ============================
+  database:
+    <<: *restart
+    image: ${DATABASE_IMAGE:?lancer npm run local:sync-tags}
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-password}
+      POSTGRES_DB: ${DB_NAME:-mairie_db_local}
+    volumes:
+      - postgres-data:/var/lib/postgresql
+    ports:
+      - "127.0.0.1:${DB_PUBLISHED_PORT:-57432}:5432" # LOCAL: lecture par l'agent de test et par psql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d ${DB_NAME:-mairie_db_local}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    networks: [stack]
+
+  liquibase:
+    image: ${LIQUIBASE_IMAGE:?lancer npm run local:sync-tags}
+    depends_on:
+      database:
+        condition: service_healthy
+    environment:
+      LIQUIBASE_ANALYTICS_ENABLED: "false"
+      LIQUIBASE_COMMAND_URL: jdbc:postgresql://database:5432/${DB_NAME:-mairie_db_local}
+      LIQUIBASE_COMMAND_USERNAME: postgres
+      LIQUIBASE_COMMAND_PASSWORD: ${DB_PASSWORD:-password}
+      LIQUIBASE_SEARCH_PATH: /migrations
+      ROLE_PASSWORD: ${DB_ROLE_PASSWORD:-password}
+    # LOCAL: mots de passe des rôles d'API fixes, et compte admin « modèle » (admin@example.invalid / password_template)
+    # grâce à allow_template_admin, jamais utilisés hors d'une machine de développement. Les paramètres -D viennent APRÈS la commande.
+    entrypoint: ["sh", "-c"]
+    command:
+      - >-
+        exec liquibase --changelog-file=changelog.xml update
+        -Dcore_api_password="$$ROLE_PASSWORD"
+        -Dproject_api_password="$$ROLE_PASSWORD"
+        -Dcalendar_api_password="$$ROLE_PASSWORD"
+        -Dmessage_api_password="$$ROLE_PASSWORD"
+        -Delearning_api_password="$$ROLE_PASSWORD"
+        -Dallow_template_admin=true
+    restart: "no"
+    networks: [stack]
+
+  redis:
+    <<: *restart
+    image: redis:8.4.0-bookworm
+    command: ["redis-server", "--appendonly", "no", "--save", ""]
+    ports:
+      - "127.0.0.1:${REDIS_PUBLISHED_PORT:-57379}:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    networks: [stack]
+
+  mailpit:
+    <<: *restart
+    image: axllent/mailpit:v1.31
+    ports:
+      - "127.0.0.1:${MAILPIT_PUBLISHED_PORT:-58025}:8025" # LOCAL: API HTTP lue par l'agent de test (pas d'envoi réel)
+    labels:
+      traefik.enable: "true"
+      traefik.http.routers.mail.rule: Host(`mail.${LOCAL_DOMAIN:-mairie360.localtest.me}`)
+      traefik.http.routers.mail.entrypoints: websecure
+      traefik.http.routers.mail.tls: "true"
+      traefik.http.services.mail.loadbalancer.server.port: "8025"
+    networks: [stack]
+
+  # Stockage S3 des pièces jointes e-learning: PROFIL OPTIONNEL « storage » (docker compose --profile storage up).
+  # Sans lui l'API e-learning démarre (ses variables S3 sont posées) mais les pièces jointes ne fonctionnent pas.
+  # Les images par défaut ne sont pas vérifiées: adapter MINIO_IMAGE / MC_IMAGE dans local/.env.
+  minio:
+    profiles: [storage]
+    <<: *restart
+    image: ${MINIO_IMAGE:-minio/minio:latest}
+    command: ["server", "/data", "--console-address", ":9001"]
+    environment:
+      MINIO_ROOT_USER: ${S3_ACCESS_KEY:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${S3_SECRET_KEY:-minioadmin}
+    volumes:
+      - minio-data:/data
+    networks: [stack]
+
+  minio-init:
+    profiles: [storage]
+    image: ${MC_IMAGE:-minio/mc:latest}
+    depends_on: [minio]
+    entrypoint: ["sh", "-c"]
+    command:
+      - >-
+        until mc alias set local http://minio:9000 "$${S3_ACCESS_KEY}" "$${S3_SECRET_KEY}"; do sleep 1; done;
+        mc mb --ignore-existing local/${S3_BUCKET:-mairie360-elearning-local}
+    environment:
+      S3_ACCESS_KEY: ${S3_ACCESS_KEY:-minioadmin}
+      S3_SECRET_KEY: ${S3_SECRET_KEY:-minioadmin}
+    restart: "no"
+    networks: [stack]
+
+  # ============================ APIs ============================
+  core-api:
+    <<: *restart
+    image: ${CORE_API_IMAGE:?lancer npm run local:sync-tags}
+    depends_on: *api-depends
+    environment:
+      <<: *api-env
+      DB_USER: core_api
+      DB_PASSWORD: ${DB_ROLE_PASSWORD:-password}
+      PUBLIC_URL: https://login.${LOCAL_DOMAIN:-mairie360.localtest.me}
+      # LOCAL: les e-mails vont dans Mailpit (https://mail.<domaine>), jamais vers l'extérieur.
+      SMTP_HOST: mailpit
+      SMTP_PORT: "1025"
+      SMTP_USERNAME: ""
+      SMTP_PASSWORD: ""
+      EMAIL_FROM: "Mairie360 (local) <noreply@mairie360.local>"
+      RATE_LIMIT_ENABLED: ${RATE_LIMIT_ENABLED:-false} # LOCAL: sinon on se bloque soi-même en développant
+      SWAGGER_ENABLED: "true"
+    networks: [stack]
+
+  project-api:
+    <<: *restart
+    image: ${PROJECT_API_IMAGE:?lancer npm run local:sync-tags}
+    depends_on: *api-depends
+    environment:
+      <<: *api-env
+      DB_USER: project_api
+      DB_PASSWORD: ${DB_ROLE_PASSWORD:-password}
+    networks: [stack]
+
+  calendar-api:
+    <<: *restart
+    image: ${CALENDAR_API_IMAGE:?lancer npm run local:sync-tags}
+    depends_on: *api-depends
+    environment:
+      <<: *api-env
+      DB_USER: calendar_api
+      DB_PASSWORD: ${DB_ROLE_PASSWORD:-password}
+    networks: [stack]
+
+  message-api:
+    <<: *restart
+    image: ${MESSAGE_API_IMAGE:?lancer npm run local:sync-tags}
+    depends_on: *api-depends
+    environment:
+      <<: *api-env
+      DB_USER: message_api
+      DB_PASSWORD: ${DB_ROLE_PASSWORD:-password}
+    networks: [stack]
+
+  elearning-api:
+    <<: *restart
+    image: ${ELEARNING_API_IMAGE:?lancer npm run local:sync-tags}
+    depends_on: *api-depends
+    environment:
+      <<: *api-env
+      DB_USER: elearning_api
+      DB_PASSWORD: ${DB_ROLE_PASSWORD:-password}
+      # L'API refuse de démarrer sans ces variables. Elles pointent vers le profil « storage » (MinIO) s'il est lancé.
+      S3_BUCKET: ${S3_BUCKET:-mairie360-elearning-local}
+      S3_REGION: us-east-1
+      S3_ENDPOINT: http://minio:9000
+      S3_PRESIGN_TTL_SECS: "900"
+      S3_ACCESS_KEY: ${S3_ACCESS_KEY:-minioadmin}
+      S3_SECRET_KEY: ${S3_SECRET_KEY:-minioadmin}
+    networks: [stack]
+
+  # ============================ BFF ============================
+  user-bff:
+    <<: *restart
+    image: ${USER_BFF_IMAGE:?lancer npm run local:sync-tags}
+    depends_on: [core-api]
+    environment:
+      <<: *bff-env
+      PORT: "4000"
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET manquant, lancer npm run local:init} # seul BFF qui le reçoit (jwtSecretInstances)
+      COOKIE_DOMAIN: .${LOCAL_DOMAIN:-mairie360.localtest.me}
+      AUTH_RATE_LIMIT_ENABLED: ${RATE_LIMIT_ENABLED:-false}
+    networks: [stack]
+
+  project-bff:
+    <<: *restart
+    image: ${PROJECT_BFF_IMAGE:?lancer npm run local:sync-tags}
+    depends_on: [project-api]
+    environment: { <<: *bff-env, PORT: "4001" }
+    networks: [stack]
+
+  calendar-bff:
+    <<: *restart
+    image: ${CALENDAR_BFF_IMAGE:?lancer npm run local:sync-tags}
+    depends_on: [calendar-api]
+    environment: { <<: *bff-env, PORT: "4002", CALENDAR_API_BASE_PATH: "http://calendar-api:3000" }
+    networks: [stack]
+
+  message-bff:
+    <<: *restart
+    image: ${MESSAGE_BFF_IMAGE:?lancer npm run local:sync-tags}
+    depends_on: [message-api]
+    environment: { <<: *bff-env, PORT: "4003", MESSAGE_API_BASE_PATH: "http://message-api:3000" }
+    networks: [stack]
+
+  dashboard-bff:
+    <<: *restart
+    image: ${DASHBOARD_BFF_IMAGE:?lancer npm run local:sync-tags}
+    depends_on: [core-api]
+    environment: { <<: *bff-env, PORT: "4004" }
+    networks: [stack]
+
+  settings-bff:
+    <<: *restart
+    image: ${SETTINGS_BFF_IMAGE:?lancer npm run local:sync-tags}
+    depends_on: [core-api]
+    environment: { <<: *bff-env, PORT: "4005" }
+    networks: [stack]
+
+  elearning-bff:
+    <<: *restart
+    image: ${ELEARNING_BFF_IMAGE:?lancer npm run local:sync-tags}
+    depends_on: [elearning-api]
+    environment: { <<: *bff-env, PORT: "4006" }
+    networks: [stack]
+
+  # ============================ Fronts ============================
+  login-front:
+    <<: *restart
+    image: ${LOGIN_FRONT_IMAGE:?lancer npm run local:sync-tags}
+    depends_on: [user-bff]
+    environment:
+      <<: *front-env
+      PORT: "5000"
+      COOKIE_DOMAIN: .${LOCAL_DOMAIN:-mairie360.localtest.me}
+      TRUST_INGRESS_IP_HEADERS: "true"
+    labels:
+      traefik.enable: "true"
+      traefik.http.routers.login.rule: Host(`login.${LOCAL_DOMAIN:-mairie360.localtest.me}`)
+      traefik.http.routers.login.entrypoints: websecure
+      traefik.http.routers.login.tls: "true"
+      traefik.http.services.login.loadbalancer.server.port: "5000"
+    networks: [stack]
+
+  project-front:
+    <<: *restart
+    image: ${PROJECT_FRONT_IMAGE:?lancer npm run local:sync-tags}
+    depends_on: [project-bff]
+    environment: { <<: *front-env, PORT: "5001", COOKIE_DOMAIN: ".${LOCAL_DOMAIN:-mairie360.localtest.me}" }
+    labels:
+      traefik.enable: "true"
+      traefik.http.routers.project.rule: Host(`project.${LOCAL_DOMAIN:-mairie360.localtest.me}`)
+      traefik.http.routers.project.entrypoints: websecure
+      traefik.http.routers.project.tls: "true"
+      traefik.http.services.project.loadbalancer.server.port: "5001"
+    networks: [stack]
+
+  calendar-front:
+    <<: *restart
+    image: ${CALENDAR_FRONT_IMAGE:?lancer npm run local:sync-tags}
+    depends_on: [calendar-bff]
+    environment: { <<: *front-env, PORT: "5002", COOKIE_DOMAIN: ".${LOCAL_DOMAIN:-mairie360.localtest.me}" }
+    labels:
+      traefik.enable: "true"
+      traefik.http.routers.calendar.rule: Host(`calendar.${LOCAL_DOMAIN:-mairie360.localtest.me}`)
+      traefik.http.routers.calendar.entrypoints: websecure
+      traefik.http.routers.calendar.tls: "true"
+      traefik.http.services.calendar.loadbalancer.server.port: "5002"
+    networks: [stack]
+
+  message-front:
+    <<: *restart
+    image: ${MESSAGE_FRONT_IMAGE:?lancer npm run local:sync-tags}
+    depends_on: [message-bff]
+    environment: { <<: *front-env, PORT: "5003", COOKIE_DOMAIN: ".${LOCAL_DOMAIN:-mairie360.localtest.me}" }
+    labels:
+      traefik.enable: "true"
+      traefik.http.routers.message.rule: Host(`message.${LOCAL_DOMAIN:-mairie360.localtest.me}`)
+      traefik.http.routers.message.entrypoints: websecure
+      traefik.http.routers.message.tls: "true"
+      traefik.http.services.message.loadbalancer.server.port: "5003"
+    networks: [stack]
+
+  dashboard-front:
+    <<: *restart
+    image: ${DASHBOARD_FRONT_IMAGE:?lancer npm run local:sync-tags}
+    depends_on: [dashboard-bff]
+    environment: { <<: *front-env, PORT: "5004" }
+    labels:
+      traefik.enable: "true"
+      traefik.http.routers.dashboard.rule: Host(`dashboard.${LOCAL_DOMAIN:-mairie360.localtest.me}`)
+      traefik.http.routers.dashboard.entrypoints: websecure
+      traefik.http.routers.dashboard.tls: "true"
+      traefik.http.services.dashboard.loadbalancer.server.port: "5004"
+    networks: [stack]
+
+  settings-front:
+    <<: *restart
+    image: ${SETTINGS_FRONT_IMAGE:?lancer npm run local:sync-tags}
+    depends_on: [settings-bff]
+    environment: { <<: *front-env, PORT: "5005" }
+    labels:
+      traefik.enable: "true"
+      traefik.http.routers.settings.rule: Host(`settings.${LOCAL_DOMAIN:-mairie360.localtest.me}`)
+      traefik.http.routers.settings.entrypoints: websecure
+      traefik.http.routers.settings.tls: "true"
+      traefik.http.services.settings.loadbalancer.server.port: "5005"
+    networks: [stack]
+
+  elearning-front:
+    <<: *restart
+    image: ${ELEARNING_FRONT_IMAGE:?lancer npm run local:sync-tags}
+    depends_on: [elearning-bff]
+    environment: { <<: *front-env, PORT: "5006", COOKIE_DOMAIN: ".${LOCAL_DOMAIN:-mairie360.localtest.me}" }
+    labels:
+      traefik.enable: "true"
+      traefik.http.routers.elearning.rule: Host(`elearning.${LOCAL_DOMAIN:-mairie360.localtest.me}`)
+      traefik.http.routers.elearning.entrypoints: websecure
+      traefik.http.routers.elearning.tls: "true"
+      traefik.http.services.elearning.loadbalancer.server.port: "5006"
+    networks: [stack]
+
+  admin-front:
+    <<: *restart
+    image: ${ADMIN_FRONT_IMAGE:?lancer npm run local:sync-tags}
+    depends_on: [user-bff]
+    environment: { <<: *front-env, PORT: "5007", COOKIE_DOMAIN: ".${LOCAL_DOMAIN:-mairie360.localtest.me}" }
+    labels:
+      traefik.enable: "true"
+      traefik.http.routers.admin.rule: Host(`admin.${LOCAL_DOMAIN:-mairie360.localtest.me}`)
+      traefik.http.routers.admin.entrypoints: websecure
+      traefik.http.routers.admin.tls: "true"
+      traefik.http.services.admin.loadbalancer.server.port: "5007"
+    networks: [stack]

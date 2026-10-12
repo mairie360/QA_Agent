@@ -21,7 +21,7 @@ await client.connect(
   new StdioClientTransport({
     command: process.execPath,
     args: [path.join(ROOT, 'mcp', 'server.mjs')],
-    env: { ...process.env, QA_MAILBOX: 'testeur@example.com', QA_MAX_ACTIONS: '2', QA_SEED_PASSWORD: 'Seed-Password-1', QA_ADMIN_EMAIL: 'admin@example.com', QA_ADMIN_PASSWORD: 'Admin-Password-1' },
+    env: { ...Object.fromEntries(Object.entries(process.env).filter(([k]) => !k.startsWith('QA_'))), QA_MAILBOX: 'testeur@example.com', QA_MAX_ACTIONS: '2', QA_SEED_PASSWORD: 'Seed-Password-1' },
   }),
 );
 const call = async (name, args = {}) => {
@@ -64,6 +64,14 @@ check('report_write accepte un rapport complet', good.json.ok === true, good.jso
 // --- Environnement au choix et mode « feature » ---
 const dev = await call('run_start', { env: 'dev', persona: 'Agent d’accueil', mission: 'Test dev' });
 check('run_start sur dev', dev.json.env === 'dev' && dev.json.urls.login === 'https://login.dev.mairie360-eip.fr', dev.json.urls?.login);
+const loc = await call('run_start', { env: 'local', persona: 'Agent d’accueil', mission: 'Test local' });
+check('run_start sur local', loc.json.env === 'local' && loc.json.urls.login === 'https://login.mairie360.localtest.me', loc.json.urls?.login);
+const locAdmin = await call('seed_account', { key: 'admin' });
+check('admin local = compte modèle de la migration', locAdmin.json.email === 'admin@example.invalid' && locAdmin.json.password === 'password_template', locAdmin.json.email);
+const locAlias = await call('run_alias', { label: 'visiteur' });
+check('alias local lisible dans Mailpit', /^testeur\+qa-[0-9a-f]{4}-visiteur@example\.com$/.test(locAlias.json), locAlias.json);
+const stgAdmin = await call('run_start', { env: 'staging', persona: 'x', mission: 'y' }).then(() => call('seed_account', { key: 'admin' }));
+check('admin staging non configuré: erreur explicite, pas de valeur par défaut', stgAdmin.isError && /QA_ADMIN_EMAIL/.test(stgAdmin.text), stgAdmin.text.slice(0, 60));
 const unknownEnv = await client.callTool({ name: 'run_start', arguments: { env: 'prod', persona: 'x', mission: 'y' } });
 check('environnement inconnu refusé (prod)', unknownEnv.isError === true);
 const noFeature = await call('run_start', { mode: 'feature' });

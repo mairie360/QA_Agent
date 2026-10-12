@@ -1,7 +1,10 @@
 # Premier lancement — check-list
 
+> Les guides de mise en place **par environnement** sont `docs/setup-staging.md`, `docs/setup-dev.md` et `docs/setup-local.md`; cette check-list sert à *valider* un premier lancement et à relire ce qu'il produit.
+
 À suivre dans l'ordre: chaque étape suppose les précédentes. Cocher au fur et à mesure.
-Tout se fait d'abord sur **un** environnement (`staging` ou `dev`, voir `.env.example`); le second se branche ensuite de la même façon.
+Tout se fait d'abord sur **un** environnement (`staging`, `dev` ou `local`, voir `.env.example`); les autres se branchent ensuite de la même façon.
+**En local**, commence par `local/README.md` (`npm run local:init`, `npm run local:up`, `npm run local:seed`): pas de compte à demander ni de `kubectl`, mais il faut Docker, mkcert et l'accès aux images.
 
 ## 1. Préparer les accès (une fois)
 
@@ -75,8 +78,9 @@ Dans `reports/<date>-<env>-<id>/`: `journal.md`, `captures/`, `rapport.md`.
 2. Des missions écrites d'après les contrats du BFF et non d'après les écrans: corriger la mission, pas l'application.
 3. La limitation de débit des routes de connexion, qui peut bloquer l'agent après plusieurs essais.
 4. Un compte du seed dont le mot de passe a changé: l'agent doit passer par l'administrateur pour le réinitialiser, et le noter.
-5. Sur **dev**: machine de 4 Go sans marge (voir Deploiment). Une seule session à la fois.
-6. Une fonctionnalité « introuvable » en dev: souvent une image pas encore déployée. Vérifier le tag dans le dépôt Deploiment.
+5. En **local**: la stack complète a besoin d'environ 4 Go; ports 80/443 libres; mkcert pour que le navigateur de l'agent fasse confiance au certificat; images ghcr.io accessibles (voir les limites connues de `local/README.md`).
+6. Sur **dev**: machine de 4 Go sans marge (voir Deploiment). Une seule session à la fois.
+7. Une fonctionnalité « introuvable » en dev: souvent une image pas encore déployée. Vérifier le tag dans le dépôt Deploiment.
 
 ## 10. Renvoyer ce qui a posé problème
 

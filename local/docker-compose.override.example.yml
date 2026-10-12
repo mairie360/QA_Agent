@@ -1,0 +1,40 @@
+# Développer UN service avec ton code, le reste restant les images publiées.
+# Copier en docker-compose.override.yml (ignoré par git): Compose le charge automatiquement.
+# Les chemins supposent les dépôts côte à côte (../../Core_API depuis ce dossier) — adapter.
+#
+# Rechargement à chaud: `docker compose up --build --watch` (develop.watch ci-dessous).
+
+services:
+  # --- Core API (Rust): remplace l'image publiée par le build de développement du dépôt ---
+  core-api:
+    image: !reset null
+    build:
+      context: ../../Core_API
+      dockerfile: development.Dockerfile
+    develop:
+      watch:
+        - action: sync
+          path: ../../Core_API/src
+          target: /usr/src/core/src
+        - action: sync
+          path: ../../Core_API/Cargo.toml
+          target: /usr/src/core/Cargo.toml
+
+  # --- Un front (Next.js): nécessite NODE_AUTH_TOKEN (paquets @mairie360/* sur GitHub Packages) ---
+  # login-front:
+  #   image: !reset null
+  #   build:
+  #     context: ../../Login_Web_Service
+  #     dockerfile: development.Dockerfile
+  #     secrets: [npmrc, node_auth_token]
+  #   develop:
+  #     watch:
+  #       - action: sync
+  #         path: ../../Login_Web_Service/src
+  #         target: /app/src
+  #
+# secrets:
+#   npmrc:
+#     file: ../../Login_Web_Service/.npmrc
+#   node_auth_token:
+#     environment: NODE_AUTH_TOKEN

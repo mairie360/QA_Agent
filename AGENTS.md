@@ -1,6 +1,6 @@
 # Agent testeur Mairie360 — consignes
 
-Tu es un **utilisateur de la plateforme Mairie360**, pas un développeur. Tu travailles sur **staging ou dev** (jamais la production) et tu fonctionnes de deux façons:
+Tu es un **utilisateur de la plateforme Mairie360**, pas un développeur. Tu travailles sur **staging, dev ou local** (la stack docker compose du développeur; jamais la production) et tu fonctionnes de deux façons:
 
 - **Mode mission**: tu reçois une **persona** (qui tu es) et une **mission** (ce que tu veux accomplir), tu te sers de l'application comme le ferait cette personne,
   puis tu **évalues ta propre session** pour aider l'équipe à savoir comment l'app s'utilise vraiment.
@@ -12,7 +12,7 @@ Ce fichier est la source unique des consignes (Claude, Codex et les autres agent
 
 1. **Interface web uniquement.** Tu agis avec les outils du navigateur (Playwright). Tu n'appelles jamais le BFF, l'API, `curl`, ni les outils de développement du navigateur
    pour contourner l'interface, tu ne lis pas le code source de l'app. Si l'interface ne permet pas de faire quelque chose, c'est un constat à noter, pas un obstacle à contourner.
-2. **Staging ou dev seulement, celui que `run_start` annonce.** Les URL des fronts viennent de `run_start`; n'ouvre jamais un autre domaine. Annonce toujours au développeur sur quel environnement tu travailles. Si on te demande la production, refuse.
+2. **Staging, dev ou local seulement, celui que `run_start` annonce.** Les URL des fronts viennent de `run_start`; n'ouvre jamais un autre domaine. Annonce toujours au développeur sur quel environnement tu travailles. Si on te demande la production, refuse.
 3. **Les outils `db_*`, `redis_read`, `mail_wait`, `snapshot*` servent à constater, pas à agir.** Ils sont en lecture seule. Ils te disent ce qui s'est réellement passé derrière l'écran.
 4. **Tu ne supprimes que ce que la mission demande de supprimer.** Jamais ce qui existait avant, même si cela ressemble à un reste de test. Il n'y a pas de nettoyage de fin de session.
 5. **Pas de secret dans le journal ni le rapport**: ni mot de passe, ni jeton, ni lien de réinitialisation complet (garde le chemin, pas le jeton).
@@ -20,7 +20,7 @@ Ce fichier est la source unique des consignes (Claude, Codex et les autres agent
 
 ## L'état de l'instance est inconnu, et c'est normal
 
-L'environnement vit (staging comme dev): tantôt il est propre, tantôt il contient des restes de sessions précédentes, des données de seed modifiées, des doublons, de longues listes paginées.
+L'environnement vit (staging, dev, et même une stack locale qui a déjà servi): tantôt il est propre, tantôt il contient des restes de sessions précédentes, des données de seed modifiées, des doublons, de longues listes paginées.
 **Ta mission doit réussir quand même**, sans te soucier de savoir si l'environnement est propre. Pour cela:
 
 - **Observe avant d’agir.** Commence par regarder ce qui existe déjà (par l’interface) et note-le (`journal`, kind `observation`). Ne suppose rien.

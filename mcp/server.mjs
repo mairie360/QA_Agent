@@ -28,10 +28,10 @@ const safe = (fn) => async (args) => {
 server.registerTool(
   'run_start',
   {
-    description: 'À appeler EN PREMIER. Ouvre une session de test sur un environnement (staging ou dev): crée l’identifiant, le marqueur [QA-xxxx] à mettre dans tout ce que tu crées, le journal, et donne la date du jour (pour les dates relatives), les URL des fronts et les sections attendues du rapport. Deux modes: « mission » (persona + mission écrites dans le dépôt) et « feature » (un développeur te décrit une fonctionnalité à vérifier; persona facultative, tu choisis les profils nécessaires).',
+    description: 'À appeler EN PREMIER. Ouvre une session de test sur un environnement (staging, dev ou local): crée l’identifiant, le marqueur [QA-xxxx] à mettre dans tout ce que tu crées, le journal, et donne la date du jour (pour les dates relatives), les URL des fronts et les sections attendues du rapport. Deux modes: « mission » (persona + mission écrites dans le dépôt) et « feature » (un développeur te décrit une fonctionnalité à vérifier; persona facultative, tu choisis les profils nécessaires).',
     inputSchema: {
       mode: z.enum(['mission', 'feature']).optional().describe('mission (défaut) ou feature'),
-      env: z.enum(['staging', 'dev']).optional().describe('Environnement cible; sinon celui par défaut du serveur'),
+      env: z.enum(['staging', 'dev', 'local']).optional().describe('Environnement cible (staging, dev, ou local = stack docker compose de la machine du développeur); sinon celui par défaut du serveur'),
       persona: z.string().optional().describe('Mode mission: nom de la persona jouée'),
       mission: z.string().optional().describe('Mode mission: la mission en une phrase'),
       feature: z.string().optional().describe('Mode feature: la fonctionnalité à vérifier, telle que le développeur l’a décrite'),
