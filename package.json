@@ -1,0 +1,24 @@
+{
+  "name": "mairie360-qa-agent",
+  "private": true,
+  "type": "module",
+  "description": "Agent IA testeur de l'app Mairie360 sur staging: sessions manuelles, par l'interface web, avec journal et auto-évaluation.",
+  "engines": { "node": ">=20" },
+  "scripts": {
+    "doctor": "node harness/doctor.mjs",
+    "mcp": "node mcp/server.mjs",
+    "seed:plan": "node seed/seed.mjs plan",
+    "seed:apply": "node seed/seed.mjs apply",
+    "seed:status": "node seed/seed.mjs status",
+    "selftest": "node mcp/selftest.mjs",
+    "check": "node --check harness/config.mjs && node --check harness/db.mjs && node --check harness/redis.mjs && node --check harness/mail.mjs && node --check harness/run.mjs && node --check harness/doctor.mjs && node --check mcp/server.mjs && node --check seed/seed.mjs"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "1.32.1",
+    "@playwright/mcp": "0.0.83",
+    "ioredis": "5.4.1",
+    "pg": "8.13.1",
+    "yaml": "2.9.1",
+    "zod": "4.6.6"
+  }
+}

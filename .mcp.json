@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "playwright": {
+      "command": "npx",
+      "args": ["@playwright/mcp@0.0.83", "--browser", "chromium", "--isolated", "--output-dir", "reports/captures"]
+    },
+    "qa-observer": {
+      "command": "node",
+      "args": ["mcp/server.mjs"]
+    }
+  }
+}

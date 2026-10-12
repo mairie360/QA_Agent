@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "playwright": {
+      "command": "npx",
+      "args": ["@playwright/mcp@0.0.83", "--browser", "chromium", "--isolated"]
+    },
+    "qa-observer": {
+      "command": "node",
+      "args": ["/chemin/absolu/vers/QA_Agent/mcp/server.mjs"]
+    }
+  }
+}

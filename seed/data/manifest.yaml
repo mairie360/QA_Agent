@@ -1,0 +1,3 @@
+# Version du seed. À incrémenter à chaque évolution des fichiers de ce dossier (et à noter dans ../CHANGELOG.md).
+version: 1
+description: Mairie fictive de taille moyenne — cinq services, une quinzaine d'agents.

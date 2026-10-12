@@ -1,0 +1,17 @@
+# Groupes = services. `members` référence les clés de users.yaml.
+items:
+  - name: Accueil
+    description: Accueil du public et état civil.
+    members: [accueil-1, accueil-2, accueil-resp]
+  - name: Ressources humaines
+    description: Gestion du personnel.
+    members: [rh-resp, rh-1]
+  - name: Finances
+    description: Budget, comptabilité, marchés.
+    members: [finances-resp, finances-1, finances-2]
+  - name: Urbanisme
+    description: Permis de construire, PLU.
+    members: [urbanisme-resp, urbanisme-1]
+  - name: Direction
+    description: Cabinet du maire et direction générale.
+    members: [maire, dgs]

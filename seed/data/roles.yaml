@@ -1,0 +1,5 @@
+# Rôles supplémentaires. Les cinq rôles de base (Admin, Maire, Responsable, User, Guest) existent déjà.
+items:
+  - name: Référent numérique
+    description: Aide les collègues de son service sur les outils numériques.
+    can_be_deleted: true
