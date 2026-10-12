@@ -1,18 +1,20 @@
--- Rôle Postgres en lecture seule pour l'agent testeur (staging uniquement).
+-- Rôle Postgres en lecture seule pour l'agent testeur (staging ou dev).
 --
--- À exécuter UNE fois, en superuser, sur le pod de la base de staging:
---   kubectl --context staging -n mairie360-staging exec -i sts/staging-database -- \
---     psql -U postgres -d mairie_db_staging -v pw="'$(openssl rand -base64 24)'" -f - < sql/readonly-role.sql
--- puis reporter le mot de passe dans .env (QA_DB_PASSWORD).
+-- À exécuter UNE fois PAR ENVIRONNEMENT, en superuser, sur le pod de sa base:
+--   staging: kubectl --context staging -n mairie360-staging exec -i sts/staging-database -- \
+--              psql -U postgres -d mairie_db_staging -v dbname=mairie_db_staging -v pw="'$(openssl rand -base64 24)'" -f - < sql/readonly-role.sql
+--   dev:     kubectl --context dev -n mairie360-dev exec -i sts/dev-database -- \
+--              psql -U postgres -d mairie_db_dev -v dbname=mairie_db_dev -v pw="'$(openssl rand -base64 24)'" -f - < sql/readonly-role.sql
+-- puis reporter le mot de passe dans .env.<env> (QA_DB_PASSWORD).
 --
 -- Ce rôle lit aussi users.password (hash argon2) et sessions.token_hash; harness/db.mjs masque ces colonnes à l'affichage,
--- mais ne l'utiliser que sur un staging peuplé de données fictives.
+-- mais ne l'utiliser que sur un environnement peuplé de données fictives.
 
 CREATE ROLE qa_readonly LOGIN PASSWORD :pw NOSUPERUSER NOCREATEDB NOCREATEROLE;
 ALTER ROLE qa_readonly SET default_transaction_read_only = on;
 ALTER ROLE qa_readonly SET statement_timeout = '10s';
 
-GRANT CONNECT ON DATABASE mairie_db_staging TO qa_readonly;
+GRANT CONNECT ON DATABASE :"dbname" TO qa_readonly;
 
 DO $$
 DECLARE s text;

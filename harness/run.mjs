@@ -1,15 +1,16 @@
 /**
- * État d'une session de test: identifiant, marqueur, journal, instantanés, rapport.
+ * État d'une session de test: environnement, identifiant, marqueur, journal, instantanés, rapport.
+ * Deux modes: « mission » (une persona joue une mission écrite) et « feature » (un dev décrit une fonctionnalité à vérifier).
  * Tout vit dans reports/<run>/ (ignoré par git).
  */
 import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { randomBytes } from 'node:crypto';
 import path from 'node:path';
-import { ROOT, cfg, frontUrl, FRONTS } from './config.mjs';
+import { ROOT, cfg, currentEnv, frontUrl, FRONTS, selectEnv } from './config.mjs';
 
 const POINTER = path.join(ROOT, '.state', 'current.json');
 
-export const REQUIRED_SECTIONS = [
+export const MISSION_SECTIONS = [
   'Verdict',
   'Parcours',
   'Données créées, modifiées, supprimées',
@@ -22,21 +23,43 @@ export const REQUIRED_SECTIONS = [
   'Suggestions',
 ];
 
+export const FEATURE_SECTIONS = [
+  'Verdict',
+  'Compréhension de la demande',
+  'Cas testés',
+  'Données créées, modifiées, supprimées',
+  'État rencontré',
+  'Frictions',
+  'Bugs et incohérences',
+  'Régressions possibles',
+  'Limites de l’évaluation',
+  'Suggestions',
+];
+
+export const REQUIRED_SECTIONS = MISSION_SECTIONS; // conservé pour les tests existants
+export const sectionsFor = (mode) => (mode === 'feature' ? FEATURE_SECTIONS : MISSION_SECTIONS);
+
 const normalize = (s) => s.toLowerCase().replace(/[’']/g, "'").replace(/\s+/g, ' ').trim();
 
-export function startRun({ persona, mission, behavior }) {
+export function startRun({ mode = 'mission', persona, mission, feature, behavior, env }) {
+  if (env) selectEnv(env);
+  if (mode === 'feature' && !feature) throw new Error('Mode feature: décris la fonctionnalité à vérifier (paramètre feature).');
+  if (mode === 'mission' && (!persona || !mission)) throw new Error('Mode mission: persona et mission sont obligatoires.');
   const id = randomBytes(2).toString('hex');
-  const dir = path.join(ROOT, 'reports', `${new Date().toISOString().slice(0, 16).replace(/[-:T]/g, '')}-${id}`);
+  const stamp = new Date().toISOString().slice(0, 16).replace(/[-:T]/g, '');
+  const dir = path.join(ROOT, 'reports', `${stamp}-${currentEnv()}-${id}`);
   mkdirSync(path.join(dir, 'snapshots'), { recursive: true });
   mkdirSync(path.join(dir, 'captures'), { recursive: true });
-  const now = new Date();
   const run = {
     runId: id,
     marker: `[QA-${id}]`,
-    startedAt: now.toISOString(),
+    env: currentEnv(),
+    mode,
+    startedAt: new Date().toISOString(),
     dir,
-    persona,
-    mission,
+    persona: persona ?? null,
+    mission: mission ?? null,
+    feature: feature ?? null,
     behavior: behavior ?? null,
     actions: 0,
     maxActions: cfg.maxActions,
@@ -44,14 +67,20 @@ export function startRun({ persona, mission, behavior }) {
   writeFileSync(POINTER, JSON.stringify(run, null, 2));
   writeFileSync(
     path.join(dir, 'journal.md'),
-    `# Journal de session ${run.marker}\n\n- Persona: ${persona}\n- Mission: ${mission}\n- Comportement: ${behavior ?? 'naturel'}\n- Début: ${run.startedAt}\n\n`,
+    `# Journal de session ${run.marker}\n\n- Environnement: ${run.env} (${cfg.domain})\n- Mode: ${mode}\n`
+      + (mode === 'feature'
+        ? `- Fonctionnalité à vérifier: ${feature}\n`
+        : `- Persona: ${persona}\n- Mission: ${mission}\n`)
+      + `- Comportement: ${behavior ?? 'naturel'}\n- Début: ${run.startedAt}\n\n`,
   );
   return run;
 }
 
 export function currentRun() {
   if (!existsSync(POINTER)) throw new Error('Aucune session en cours: appeler run_start d’abord.');
-  return JSON.parse(readFileSync(POINTER, 'utf8'));
+  const run = JSON.parse(readFileSync(POINTER, 'utf8'));
+  selectEnv(run.env); // si le serveur redémarre en cours de session, on reste sur le bon environnement
+  return run;
 }
 
 const save = (run) => writeFileSync(POINTER, JSON.stringify(run, null, 2));
@@ -62,14 +91,19 @@ export function describeRun(run) {
   return {
     runId: run.runId,
     marker: run.marker,
+    env: run.env,
+    mode: run.mode,
+    domain: cfg.domain,
     reportDir: path.relative(ROOT, run.dir),
     today: `${days[now.getDay()]} ${now.toISOString().slice(0, 10)}`,
     now: now.toISOString(),
     maxActions: run.maxActions,
     urls: Object.fromEntries(FRONTS.map((f) => [f, frontUrl(f)])),
+    reportSections: sectionsFor(run.mode),
     rules: [
+      `Tu es sur l’environnement ${run.env} (${cfg.domain}) et nulle part ailleurs.`,
       `Tout ce que tu crées porte le marqueur ${run.marker} dans son nom/titre, et les adresses e-mail passent par run_alias.`,
-      'Tu ne supprimes que ce que la mission demande de supprimer, jamais ce qui existait avant.',
+      'Tu ne supprimes que ce que la mission/la vérification demande de supprimer, jamais ce qui existait avant.',
       'Tu agis uniquement par l’interface web. Les outils db_/redis_/mail_ servent à constater, pas à agir.',
     ],
   };
@@ -128,9 +162,9 @@ export function snapshotDiff(before, after) {
 export function writeReport(markdown) {
   const run = currentRun();
   const headings = [...markdown.matchAll(/^##\s+(.+?)\s*$/gm)].map((m) => normalize(m[1]));
-  const missing = REQUIRED_SECTIONS.filter((s) => !headings.some((h) => h.startsWith(normalize(s))));
-  if (missing.length) return { ok: false, missing };
+  const missing = sectionsFor(run.mode).filter((s) => !headings.some((h) => h.startsWith(normalize(s))));
+  if (missing.length) return { ok: false, mode: run.mode, missing };
   const file = path.join(run.dir, 'rapport.md');
   writeFileSync(file, markdown);
-  return { ok: true, path: path.relative(ROOT, file), actions: run.actions };
+  return { ok: true, path: path.relative(ROOT, file), env: run.env, actions: run.actions };
 }
