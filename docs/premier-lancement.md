@@ -1,5 +1,7 @@
 # Premier lancement — check-list
 
+> Les guides de mise en place **par environnement** sont `docs/setup-staging.md`, `docs/setup-dev.md` et `docs/setup-local.md`; cette check-list sert à *valider* un premier lancement et à relire ce qu'il produit.
+
 À suivre dans l'ordre: chaque étape suppose les précédentes. Cocher au fur et à mesure.
 Tout se fait d'abord sur **un** environnement (`staging`, `dev` ou `local`, voir `.env.example`); les autres se branchent ensuite de la même façon.
 **En local**, commence par `local/README.md` (`npm run local:init`, `npm run local:up`, `npm run local:seed`): pas de compte à demander ni de `kubectl`, mais il faut Docker, mkcert et l'accès aux images.

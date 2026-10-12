@@ -1,106 +1,112 @@
-# QA_Agent — un utilisateur IA qui teste Mairie360 sur staging
+# QA_Agent — un utilisateur IA qui teste Mairie360
 
-Une session de test = un agent IA (Claude ou un agent OpenAI) joue une **persona** (agent d'accueil, administrateur…) avec une **mission en langage métier**
-(ou, en **mode fonctionnalité**, un développeur lui décrit en discutant ce qu'il veut vérifier en dev ou en staging),
-utilise l'application **par son interface web** comme une vraie personne, **tient un journal** de ce qu'il fait et de ce qu'il obtient, puis **évalue sa propre session**.
-Le but est de donner un retour d'usage aux développeurs. Rien n'est automatique: **un dev lance une session quand il en a besoin**.
+QA_Agent met un **agent IA** (Claude, ou un agent OpenAI) à la place d'un utilisateur de la plateforme Mairie360. Il reçoit un rôle (agent d'accueil, administrateur…) et un objectif métier,
+se sert de l'application **uniquement par son interface web**, note ce qu'il fait et ce qu'il obtient, recoupe avec ce qui s'est réellement passé derrière l'écran (e-mails, base, Redis),
+puis **évalue sa propre session** : ce qui a marché, ce qui l'a gêné, ce qui est cassé.
 
-Principes:
-- **Interface web uniquement.** Jamais le BFF ni l'API (sauf le seed, hors agent).
-- **Staging ou dev, au choix** (jamais la production): `QA_ENV` ou « teste sur dev » dans la demande. Les secrets de chaque environnement sont séparés (`.env.staging`, `.env.dev`).
-- **Tout l'environnement, pas un front.** L'agent circule d'un front à l'autre comme un utilisateur.
-- **L'état de départ est inconnu, et c'est voulu.** Pas de nettoyage: l'instance est propre un jour, pleine de traces un autre. L'agent marque ce qu'il crée, choisit ses cibles par critères, ne supprime que ce que la mission demande.
-- **De la variabilité** comme une vraie personne (comportement « pressé », « hésitant »…): deux sessions de la même mission ne suivent pas le même chemin.
-- **Observation en lecture seule** de ce qui se passe derrière l'écran (e-mails réels via Resend, base, Redis), pour recouper avec ce que l'agent voit.
+**À quoi ça sert :** donner aux développeurs un retour d'*usage* — pas seulement « ça répond 200 », mais « une personne peut-elle faire son travail avec ça ? ».
+**Ce que ce n'est pas :** une CI automatique. Un développeur lance une session quand il en a besoin.
+
+## Comment ça fonctionne
 
 ```
-AGENTS.md        consignes de l'agent (source unique; CLAUDE.md l'importe)
-personas/        qui joue (profil, aisance, attentes) + _comportements.md
-missions/        objectifs métier + liste des données à créer/modifier/supprimer (_modele.md)
-rubric.md        grille d'évaluation de l'utilisabilité
-templates/       forme du rapport d'auto-évaluation
-local/           stack locale complète (docker compose) + scripts: voir local/README.md
-seed/            jeu de données de staging, évolutif, idempotent, additif (CHANGELOG.md)
-mcp/server.mjs   outils de l'agent hors navigateur: session, journal, observation en lecture seule, rapport
-harness/         code partagé (config, base, Redis, mails, état de session)
-scripts/         port-forward.sh (base et Redis ne sont pas exposés)
-sql/             rôle Postgres en lecture seule
-reports/         journal, captures, instantanés et rapport de chaque session (ignoré par git)
-docs/            premier-lancement.md (check-list), verifier-une-fonctionnalite.md (mode discussion), integration.md (Claude / ChatGPT)
+ Toi ──────────────►  Agent IA  (Claude Code, Codex…)      lit AGENTS.md : persona + mission, ou ta demande
+ « teste sur dev : … »    │
+                          ├──► Navigateur (Playwright MCP) ──►  Application, par l'interface web  ◄── la seule façon d'AGIR
+                          │                                      (8 fronts → BFF → APIs)
+                          └──► qa-observer (MCP, ce dépôt)
+                                 • journal de la session, instantanés avant/après, rapport
+                                 • observation EN LECTURE SEULE : e-mails (Resend ou Mailpit), base, Redis
+                                                    │
+                                              reports/<date>-<env>-<id>/   journal.md · captures · rapport.md
 ```
 
-## Trois modes
+Deux façons de lui parler :
 
-| Mode | Environnement | Qui pilote | Pour quoi faire |
-|---|---|---|---|
-| **Scénarios** | staging | l'agent joue une **mission** (persona + données + scénario, `missions/`) | tests d'usage reproductibles, comparables d'une version à l'autre |
-| **Accompagné** | dev | Claude Code, que tu **guides en discutant** (« teste sur dev : … ») | vérifier une fonctionnalité en cours de développement |
-| **Local** | ta machine (`local/`) | toi, ou l'agent | développer avec toute la stack, sans dépendre des serveurs |
+| Façon | Tu donnes | L'agent fait |
+|---|---|---|
+| **Mission** | une persona et un fichier de mission (`missions/`) : objectif métier + tableau des données à créer / modifier / supprimer | joue le rôle, accomplit la mission, journalise, écrit son auto-évaluation |
+| **Fonctionnalité** (en discutant) | une phrase : « Teste sur dev : les responsables peuvent maintenant … » | reformule, déduit des critères d'acceptation, joue nominal / saisies invalides / droits / état de l'instance / retour arrière / voisinage, répond avec un verdict, reste disponible pour creuser ou retester |
 
-Les modes ne sont pas verrouillés: n'importe quel environnement accepte missions et mode fonctionnalité; ce tableau est l'usage recommandé.
-La stack locale (`docker compose`, 24 services) est décrite dans **`local/README.md`**.
+### Les principes qui structurent tout
 
-## Mise en place (une fois)
+- **Interface web uniquement.** L'agent n'appelle jamais le BFF ni l'API (seul le *seed*, lancé par un développeur hors agent, utilise l'administration du BFF).
+- **L'état de départ est inconnu, et c'est voulu.** Aucun nettoyage entre deux sessions : l'instance est propre un jour, pleine de traces un autre. L'agent observe avant d'agir, marque tout ce qu'il crée (`[QA-xxxx]`, adresses e-mail uniques), choisit ses cibles par critères et **ne supprime que ce que la mission demande**.
+- **De la variabilité comme chez une vraie personne** (comportement « pressé », « hésitant »…) : deux sessions de la même mission ne suivent pas le même chemin.
+- **Observer sans modifier.** Base, Redis et e-mails sont lus ; l'agent ne peut rien y écrire. Le jeu de données de base vient du *seed* (idempotent, additif, versionné).
+- **Jamais la production.** Le code ne connaît que `staging`, `dev` et `local`.
+
+## Choisir son environnement
+
+| Environnement | Usage recommandé | E-mails | Observation base / Redis | Mise en place |
+|---|---|---|---|---|
+| **staging** | **missions** : retours d'usage reproductibles, comparables d'une version à l'autre | Resend (vraie boîte de test) | `kubectl port-forward`, facultatif | [`docs/setup-staging.md`](docs/setup-staging.md) |
+| **dev** | **mode accompagné** : tu guides Claude Code en discutant pour vérifier une fonctionnalité en cours | Resend (vraie boîte de test) | `kubectl port-forward`, facultatif | [`docs/setup-dev.md`](docs/setup-dev.md) |
+| **local** | développer avec **toute la plateforme sur ta machine** (docker compose, 24 conteneurs), y brancher l'agent quand tu veux | Mailpit (rien ne sort) | directe, sans `kubectl` | [`docs/setup-local.md`](docs/setup-local.md) + [`local/README.md`](local/README.md) |
+
+Rien n'est verrouillé : chaque environnement accepte missions et mode fonctionnalité ; le tableau est l'usage recommandé.
+On choisit l'environnement dans `.env` (`QA_ENV`) ou simplement dans la demande (« teste sur dev », « en local »). Les secrets de chaque environnement sont séparés (`.env.staging`, `.env.dev`, jamais commités).
+
+## Démarrage rapide
 
 ```bash
-npm install
-cp .env.example .env                    # commun: environnement par défaut, boîte de test, clé Resend
-cp .env.staging.example .env.staging    # secrets de l'environnement (idem .env.dev.example → .env.dev)
-npx playwright install chromium    # ou utiliser le Chromium déjà présent
-npm run selftest         # serveur MCP: doit afficher « Tout est OK » (sans staging)
+git clone git@github.com:mairie360/QA_Agent.git && cd QA_Agent
+npm install && npx playwright install chromium
+npm test                                  # sans réseau : « Tout est OK »
 ```
 
-1. **Boîte de test réelle** (`QA_MAILBOX`): tous les comptes du seed et ceux créés par l'agent sont des alias `vous+qa-…@domaine`, donc les e-mails de staging (Resend) arrivent bien chez vous.
-2. **Seed** (hors agent, par un dev): `npm run seed:plan` pour voir, `npm run seed:apply` pour appliquer; `-- --env dev` pour dev. Voir ci-dessous.
+Puis suivre le guide de l'environnement voulu (liens ci-dessus). Pour une première prise en main complète : [`docs/premier-lancement.md`](docs/premier-lancement.md) (check-list pas à pas).
 
-La check-list pas à pas est dans **`docs/premier-lancement.md`**.
-3. **Observation facultative**: sans elle l'agent travaille avec l'écran et les e-mails et écrit « non vérifié en base ».
-   - Clé Resend en accès complet (`RESEND_API_KEY`) pour lire les e-mails.
-   - Base et Redis: `sql/readonly-role.sql` (une fois par environnement), mot de passe Redis du compte `admin` du chart, puis `./scripts/port-forward.sh staging` (ou `dev`).
-4. `npm run doctor` vérifie les 8 fronts et les observateurs.
+Lancer une session — avec Claude Code, depuis la racine du dépôt :
 
-## Lancer une session
+> Joue la mission `missions/creer-un-compte-agent.md` avec la persona `personas/administrateur.md` sur staging. Comportement : pressé.
 
-Voir `docs/integration.md` pour chaque outil. Avec Claude Code, depuis la racine du dépôt:
+> Teste sur dev : les responsables peuvent maintenant ajouter un membre à un groupe depuis la fiche de l'agent. Un agent simple ne doit pas voir ce bouton.
 
-> Joue la mission `missions/creer-un-compte-agent.md` avec la persona `personas/administrateur.md`. Comportement: pressé.
+Autres outils (Claude Desktop, Codex CLI, SDK Agents d'OpenAI ; limite de ChatGPT web) : [`docs/integration.md`](docs/integration.md).
 
-Pour **vérifier une fonctionnalité en discutant** (`docs/verifier-une-fonctionnalite.md`):
+## Contenu du dépôt
 
-> Teste sur dev: les responsables peuvent maintenant ajouter un membre à un groupe depuis la fiche de l'agent. Un agent simple ne doit pas voir ce bouton.
+```
+AGENTS.md          consignes de l'agent — source unique (CLAUDE.md l'importe)
+personas/          qui joue : profil, aisance numérique, attentes ; _comportements.md (pressé, hésitant…)
+missions/          objectifs métier + données à créer/modifier/supprimer ; _modele.md pour en écrire
+rubric.md          grille d'évaluation de l'utilisabilité (notes de 1 à 5 avec preuves)
+templates/         forme des rapports (mission, fonctionnalité)
+seed/              jeu de données : 14 comptes, 5 groupes, 1 rôle — idempotent, additif, versionné (CHANGELOG.md)
+mcp/server.mjs     outils de l'agent hors navigateur : journal, observation en lecture seule, instantanés, rapport
+harness/           code partagé : profils d'environnement, base, Redis, e-mails, état de session
+local/             la plateforme complète en docker compose (images de dev), HTTPS, Mailpit
+scripts/, sql/     port-forward vers staging/dev ; rôle Postgres en lecture seule
+docs/              guides de mise en place par environnement, check-list, mode fonctionnalité, intégration
+tests/             tests sans réseau : seed, lecteur Mailpit, validation du compose
+reports/           journal, captures et rapport de chaque session (ignoré par git)
+```
 
-L'agent reformule ce qu'il a compris, déduit ses critères d'acceptation, joue les cas (nominal, saisies invalides, droits, état de l'instance, retour arrière, voisinage), répond avec un verdict, et reste disponible pour creuser ou retester.
+## Le rapport d'une session
 
-Dans les deux modes, l'agent ouvre la session (`run_start`), se connecte par la page de connexion, accomplit la mission en journalisant chaque action, constate les effets (e-mail, base), et écrit `reports/<date>-<id>/rapport.md`.
-Relancer la même mission donne un autre chemin; **ne pas nettoyer entre deux**: c'est le but.
+Chaque session écrit `reports/<date>-<env>-<id>/` : `journal.md` (chaque action, observation, friction, bug, objet touché, avec preuves), `captures/`, `snapshots/` (état avant/après) et `rapport.md`.
+Le rapport est **refusé par l'outil s'il manque une section** (verdict, parcours ou cas testés, données touchées, état rencontré, frictions, bugs, utilisabilité, limites, suggestions) et tout y renvoie à une preuve ; ce qui n'a pas été vérifié s'appelle « non vérifié ».
 
-## Le seed
+## Faire évoluer
 
-Mairie fictive (mêmes comptes en staging et en dev, appliqués séparément): 14 comptes (maire, DGS, 4 services avec responsables et agents, un stagiaire, un nouvel arrivant), 5 groupes, 1 rôle. Fichiers: `seed/data/*.yaml`.
-Il est **idempotent et additif**: relancer ne crée rien de plus, corrige les noms, complète rôles et membres, et **ne supprime jamais rien** ni ne touche ce que l'agent a créé.
-Chaque compte a le mot de passe `QA_SEED_PASSWORD` (changement forcé à la première connexion); `npm run seed:apply -- --reset-passwords` le remet.
+- **Une mission ou une persona :** copier `missions/_modele.md` ou un fichier de `personas/`. Une mission décrit un objectif métier et une **table de données**, pas des étapes.
+- **Le seed :** ajouter dans `seed/data/*.yaml` (ne jamais renommer une clé), incrémenter `seed/data/manifest.yaml`, noter dans `seed/CHANGELOG.md`. Il couvre aujourd'hui comptes, rôles et groupes ; calendrier, projets, messages, e-learning demandent un pilote dans `seed/drivers/`.
+- **Un environnement :** un profil dans `harness/config.mjs`.
 
-Faire évoluer: ajouter dans les YAML (ne jamais renommer une clé), incrémenter `seed/data/manifest.yaml`, noter dans `seed/CHANGELOG.md`.
-Le seed couvre aujourd'hui **comptes, rôles, groupes**. Calendrier, projets, messages, e-learning: ajouter un pilote dans `seed/drivers/` (voir `seed/CHANGELOG.md`).
+## Garde-fous et limites
 
-## Ajouter une mission ou une persona
+- Refus de tout domaine hors `staging.`, `dev.` et `*.localtest.me` ; base en lecture seule (rôle `SELECT`, transaction `READ ONLY`, une instruction) ; Redis limité à quatre lectures ; colonnes secrètes masquées ; budget d'actions par session (`QA_MAX_ACTIONS`, 150 par défaut).
+- **« Interface web uniquement » repose sur les consignes, pas sur un verrou technique** : le navigateur expose `browser_evaluate` (JavaScript dans la page), qui permettrait d'appeler le BFF. `AGENTS.md` l'interdit ; le journal et les captures permettent de le vérifier après coup.
+- Le navigateur a **les droits de la persona** dans l'interface : un environnement de test doit rester un environnement de test, avec des données fictives.
+- Le rapport est **l'avis d'un modèle** jouant un rôle : utile pour repérer frictions et incohérences, pas une mesure. Une session de test n'est pas une preuve d'absence de défauts.
+- Une session consomme beaucoup d'appels au modèle.
 
-Copier `missions/_modele.md` ou un fichier de `personas/`. Une mission décrit un objectif métier et une **table de données** (créer / modifier / supprimer, avec critère de réussite), **pas des étapes**.
+### Ce qui est vérifié, et ce qui ne l'est pas
 
-## Ce qui est vérifié, et ce qui ne l'est pas
+Vérifié sans accès aux environnements (`npm test`) : le serveur MCP (outils, garde-fous de lecture seule, budget d'actions, refus d'un rapport incomplet, choix d'environnement, mode fonctionnalité), le seed contre un faux BFF (création, idempotence, évolution, aucune suppression),
+le lecteur d'e-mails de la stack locale contre un faux Mailpit, et la configuration de la stack locale (`docker compose config`).
 
-Vérifié ici, sans staging: le serveur MCP (`npm run selftest`: outils, garde-fous de lecture seule, budget d'actions, refus d'un rapport incomplet) et le seed contre un faux BFF en mémoire (`node tests/seed.test.mjs`: création, idempotence, évolution, aucune suppression).
-
-**Non vérifié: aucun run réel sur staging** (ce dépôt a été construit dans un environnement qui n'atteint pas le domaine). Au premier lancement, à confirmer:
-- `QA_API_FRONT`: le front dont l'hôte relaie `/bff/admin/*` (pour le seed seulement);
-- les noms de tables et colonnes (l'agent les découvre avec `db_tables` / `db_describe`);
-- le `port-forward` vers la base sous la NetworkPolicy de staging;
-- le comportement réel des écrans: les missions de ce dépôt ont été écrites d'après les contrats du BFF, pas en regardant les fronts.
-
-## Limites
-
-- Le rapport est **l'avis d'un modèle** jouant un rôle: utile pour repérer des frictions et des incohérences, pas une mesure.
-- Une session consomme beaucoup d'appels au modèle: `QA_MAX_ACTIONS` borne les actions (150 par défaut).
-- **« Interface web uniquement » repose sur les consignes, pas sur un verrou technique**: le navigateur Playwright expose aussi `browser_evaluate` (JavaScript dans la page), qui permettrait d'appeler le BFF. `AGENTS.md` l'interdit; le journal et les captures permettent de le vérifier après coup.
-- Garde-fous: refus de tout domaine hors `staging.`/`dev.`; base en lecture seule (rôle, transaction `READ ONLY`, une instruction); Redis limité à 4 lectures; colonnes secrètes masquées.
-  Le navigateur, lui, peut tout faire dans l'interface avec les droits de la persona: c'est pour cela que le staging doit rester un environnement de test.
+**Non vérifié : aucun run réel** sur staging, dev ni en local (ce dépôt a été construit dans un environnement qui n'atteint pas les domaines et sans démon Docker). À confirmer au premier lancement :
+`QA_API_FRONT` (seed) ; noms de tables et colonnes (l'agent les découvre avec `db_tables` / `db_describe`) ; `port-forward` sous la NetworkPolicy ; migrations et HTTPS/cookies de la stack locale ;
+forme réelle de l'API de Mailpit ; et surtout si les missions, écrites d'après les contrats du BFF, correspondent aux écrans réels.
