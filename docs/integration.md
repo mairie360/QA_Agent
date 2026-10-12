@@ -35,5 +35,7 @@ Ces informations sur ChatGPT peuvent avoir évolué: à revérifier avant de s'y
 
 ## Navigateur
 
+En **local**, le certificat est signé par mkcert: `mkcert -install` doit avoir été fait pour que le Chromium de Playwright lui fasse confiance (sinon l'agent verra des erreurs de certificat).
+
 Le Chromium de Playwright doit être installé (`npx playwright install chromium`). Par défaut le navigateur est visible; ajouter `--headless` aux arguments de `@playwright/mcp` pour l'exécuter sans fenêtre.
 `--isolated` garde le profil en mémoire: chaque session repart sans cookies, comme un nouvel utilisateur.

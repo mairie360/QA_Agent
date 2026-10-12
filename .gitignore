@@ -7,3 +7,6 @@ node_modules
 !.state/.gitkeep
 reports/*
 !reports/.gitkeep
+local/.env
+local/certs/
+local/docker-compose.override.yml

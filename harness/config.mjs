@@ -5,13 +5,19 @@ import { fileURLToPath } from 'node:url';
 export const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
 /**
- * Environnements cibles. Seuls staging et dev existent ici: jamais la production.
+ * Environnements cibles: staging, dev et local (la stack docker compose de local/). Jamais la production.
  * Les secrets de chaque environnement vivent dans .env.<env> (mots de passe de base, Redis, admin, seed);
  * .env porte ce qui est commun (boîte de test, clé Resend, environnement par défaut).
  */
 export const PROFILES = {
-  staging: { domain: 'staging.mairie360-eip.fr', kubeContext: 'staging', namespace: 'mairie360-staging', release: 'staging', dbName: 'mairie_db_staging', dbPort: 55432, redisPort: 55379 },
-  dev: { domain: 'dev.mairie360-eip.fr', kubeContext: 'dev', namespace: 'mairie360-dev', release: 'dev', dbName: 'mairie_db_dev', dbPort: 56432, redisPort: 56379 },
+  staging: { domain: 'staging.mairie360-eip.fr', kubeContext: 'staging', namespace: 'mairie360-staging', release: 'staging', dbName: 'mairie_db_staging', dbPort: 55432, redisPort: 55379, mail: 'resend', redisAuth: true },
+  dev: { domain: 'dev.mairie360-eip.fr', kubeContext: 'dev', namespace: 'mairie360-dev', release: 'dev', dbName: 'mairie_db_dev', dbPort: 56432, redisPort: 56379, mail: 'resend', redisAuth: true },
+  // Stack locale (local/docker-compose.yml): e-mails dans Mailpit, Redis sans compte, administrateur « modèle » de la migration.
+  local: {
+    domain: 'mairie360.localtest.me', kubeContext: null, namespace: null, release: null, dbName: 'mairie_db_local', dbPort: 57432, redisPort: 57379,
+    mail: 'mailpit', mailpitUrl: 'http://127.0.0.1:58025', redisAuth: false,
+    defaults: { QA_MAILBOX: 'qa@mairie360.local', QA_ADMIN_EMAIL: 'admin@example.invalid', QA_ADMIN_PASSWORD: 'password_template', QA_SEED_PASSWORD: 'Seed-Password-Local-1', QA_DB_USER: 'qa_readonly', QA_DB_PASSWORD: 'qa_readonly_local' },
+  },
 };
 
 function parseDotenv(file) {
@@ -40,9 +46,9 @@ export function selectEnv(name) {
   return active;
 }
 
-// Ordre: variable du shell, .env.<env>, .env, valeur par défaut du profil.
+// Ordre: variable du shell, .env.<env>, .env, valeur par défaut du profil (stack locale seulement), valeur de repli.
 const val = (key, fallback) => {
-  for (const v of [process.env[key], perEnv[active]?.[key], common[key]]) if (v !== undefined && v !== '') return v;
+  for (const v of [process.env[key], perEnv[active]?.[key], common[key], PROFILES[active].defaults?.[key]]) if (v !== undefined && v !== '') return v;
   return fallback;
 };
 
@@ -59,9 +65,9 @@ export const cfg = {
   get profile() { return PROFILES[active]; },
   get domain() {
     const domain = val('QA_DOMAIN', PROFILES[active].domain);
-    // Garde-fou: jamais autre chose que staging/dev.
-    if (!/^(staging|dev)\./.test(domain) && val('QA_ALLOW_ANY_ENV') !== 'true') {
-      throw new Error(`QA_DOMAIN=${domain} n'est pas un environnement staging/dev: refus.`);
+    // Garde-fou: jamais autre chose que staging/dev ou la stack locale.
+    if (!/^(staging|dev)\.|(^|\.)localtest\.me$|(^|\.)localhost$/.test(domain) && val('QA_ALLOW_ANY_ENV') !== 'true') {
+      throw new Error(`QA_DOMAIN=${domain} n'est pas un environnement staging/dev/local: refus.`);
     }
     return domain;
   },
@@ -72,6 +78,7 @@ export const cfg = {
   get seedPassword() { return need('QA_SEED_PASSWORD'); },
   get mailbox() { return need('QA_MAILBOX'); },
   get resendKey() { return need('RESEND_API_KEY'); },
+  get mail() { return { provider: PROFILES[active].mail, mailpitUrl: val('QA_MAILPIT_URL', PROFILES[active].mailpitUrl) }; },
   db: {
     get host() { return val('QA_DB_HOST', '127.0.0.1'); },
     get port() { return Number(val('QA_DB_PORT', String(PROFILES[active].dbPort))); },
@@ -82,8 +89,9 @@ export const cfg = {
   redis: {
     get host() { return val('QA_REDIS_HOST', '127.0.0.1'); },
     get port() { return Number(val('QA_REDIS_PORT', String(PROFILES[active].redisPort))); },
-    get username() { return val('QA_REDIS_USERNAME', 'admin'); },
-    get password() { return need('QA_REDIS_PASSWORD'); },
+    // Staging/dev: compte « admin » du chart. Local: Redis sans authentification (ni compte ni mot de passe).
+    get username() { return PROFILES[active].redisAuth ? val('QA_REDIS_USERNAME', 'admin') : undefined; },
+    get password() { return PROFILES[active].redisAuth ? need('QA_REDIS_PASSWORD') : undefined; },
   },
 };
 

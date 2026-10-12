@@ -1,0 +1,10 @@
+# Certificat du domaine local (local/certs/, créé par `npm run local:init`: mkcert, sinon auto-signé).
+tls:
+  certificates:
+    - certFile: /certs/local.pem
+      keyFile: /certs/local-key.pem
+  stores:
+    default:
+      defaultCertificate:
+        certFile: /certs/local.pem
+        keyFile: /certs/local-key.pem

@@ -19,6 +19,7 @@ personas/        qui joue (profil, aisance, attentes) + _comportements.md
 missions/        objectifs métier + liste des données à créer/modifier/supprimer (_modele.md)
 rubric.md        grille d'évaluation de l'utilisabilité
 templates/       forme du rapport d'auto-évaluation
+local/           stack locale complète (docker compose) + scripts: voir local/README.md
 seed/            jeu de données de staging, évolutif, idempotent, additif (CHANGELOG.md)
 mcp/server.mjs   outils de l'agent hors navigateur: session, journal, observation en lecture seule, rapport
 harness/         code partagé (config, base, Redis, mails, état de session)
@@ -27,6 +28,17 @@ sql/             rôle Postgres en lecture seule
 reports/         journal, captures, instantanés et rapport de chaque session (ignoré par git)
 docs/            premier-lancement.md (check-list), verifier-une-fonctionnalite.md (mode discussion), integration.md (Claude / ChatGPT)
 ```
+
+## Trois modes
+
+| Mode | Environnement | Qui pilote | Pour quoi faire |
+|---|---|---|---|
+| **Scénarios** | staging | l'agent joue une **mission** (persona + données + scénario, `missions/`) | tests d'usage reproductibles, comparables d'une version à l'autre |
+| **Accompagné** | dev | Claude Code, que tu **guides en discutant** (« teste sur dev : … ») | vérifier une fonctionnalité en cours de développement |
+| **Local** | ta machine (`local/`) | toi, ou l'agent | développer avec toute la stack, sans dépendre des serveurs |
+
+Les modes ne sont pas verrouillés: n'importe quel environnement accepte missions et mode fonctionnalité; ce tableau est l'usage recommandé.
+La stack locale (`docker compose`, 24 services) est décrite dans **`local/README.md`**.
 
 ## Mise en place (une fois)
 

@@ -18,7 +18,43 @@ function linksOf(email) {
   return [...found];
 }
 
+// Stack locale: les e-mails de l'app arrivent dans Mailpit (API HTTP publiée sur 127.0.0.1).
+async function mailpit(path) {
+  const res = await fetch(`${cfg.mail.mailpitUrl}${path}`);
+  if (!res.ok) throw new Error(`Mailpit ${path} -> ${res.status}`);
+  return res.json();
+}
+
+async function waitForMailpit({ to, subject, after, timeoutS }) {
+  const since = after ? new Date(after).getTime() : Date.now() - 15 * 60_000;
+  const deadline = Date.now() + timeoutS * 1000;
+  const pattern = subject ? new RegExp(subject, 'i') : null;
+  while (Date.now() < deadline) {
+    const list = await mailpit(`/api/v1/search?query=${encodeURIComponent(`to:${to}`)}&limit=50`);
+    const hit = (list.messages ?? [])
+      .filter((m) => new Date(m.Created).getTime() >= since)
+      .filter((m) => !pattern || pattern.test(m.Subject ?? ''))
+      .sort((a, b) => new Date(b.Created) - new Date(a.Created))[0];
+    if (hit) {
+      const full = await mailpit(`/api/v1/message/${hit.ID}`);
+      return {
+        id: hit.ID,
+        to: (full.To ?? hit.To ?? []).map((t) => t.Address),
+        from: full.From?.Address,
+        subject: full.Subject ?? hit.Subject,
+        created_at: hit.Created,
+        last_event: 'delivered (Mailpit local)',
+        links: linksOf({ html: full.HTML, text: full.Text }),
+        text: (full.Text ?? (full.HTML ?? '').replace(/<[^>]+>/g, ' ')).replace(/\s+/g, ' ').trim().slice(0, 1500),
+      };
+    }
+    await new Promise((r) => setTimeout(r, 1000));
+  }
+  throw new Error(`Aucun e-mail pour ${to} après ${timeoutS}s (Mailpit)`);
+}
+
 export async function waitForMail({ to, subject, after, timeoutS = 90 }) {
+  if (cfg.mail.provider === 'mailpit') return waitForMailpit({ to, subject, after, timeoutS });
   const since = after ? new Date(after).getTime() : Date.now() - 15 * 60_000;
   const deadline = Date.now() + timeoutS * 1000;
   const wanted = to.toLowerCase();

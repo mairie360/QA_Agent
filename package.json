@@ -3,7 +3,9 @@
   "private": true,
   "type": "module",
   "description": "Agent IA testeur de l'app Mairie360 sur staging: sessions manuelles, par l'interface web, avec journal et auto-évaluation.",
-  "engines": { "node": ">=20" },
+  "engines": {
+    "node": ">=20"
+  },
   "scripts": {
     "doctor": "node harness/doctor.mjs",
     "mcp": "node mcp/server.mjs",
@@ -11,7 +13,17 @@
     "seed:apply": "node seed/seed.mjs apply",
     "seed:status": "node seed/seed.mjs status",
     "selftest": "node mcp/selftest.mjs",
-    "check": "node --check harness/config.mjs && node --check harness/db.mjs && node --check harness/redis.mjs && node --check harness/mail.mjs && node --check harness/run.mjs && node --check harness/doctor.mjs && node --check mcp/server.mjs && node --check seed/seed.mjs"
+    "check": "node --check harness/config.mjs && node --check harness/db.mjs && node --check harness/redis.mjs && node --check harness/mail.mjs && node --check harness/run.mjs && node --check harness/doctor.mjs && node --check mcp/server.mjs && node --check seed/seed.mjs && node --check local/scripts/sync-tags.mjs",
+    "local:init": "bash local/scripts/init.sh",
+    "local:sync-tags": "node local/scripts/sync-tags.mjs",
+    "local:up": "bash local/scripts/compose.sh up -d",
+    "local:down": "bash local/scripts/compose.sh down",
+    "local:reset": "bash local/scripts/compose.sh down -v",
+    "local:logs": "bash local/scripts/compose.sh logs -f --tail=100",
+    "local:ps": "bash local/scripts/compose.sh ps",
+    "local:seed": "bash local/scripts/seed.sh",
+    "local:qa-role": "bash local/scripts/qa-role.sh",
+    "test": "node mcp/selftest.mjs && node tests/seed.test.mjs && node tests/mail-local.test.mjs && bash tests/local-compose.test.sh"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.32.1",

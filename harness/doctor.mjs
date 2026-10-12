@@ -29,10 +29,18 @@ await check('QA_MAILBOX (boîte de test réelle)', async () => cfg.mailbox.repla
 await check('QA_SEED_PASSWORD', async () => { cfg.seedPassword; return 'défini'; });
 
 console.log('\nObservation (optionnelle)');
-await check('clé Resend (lecture des e-mails)', async () => {
-  const res = await fetch('https://api.resend.com/emails?limit=1', { headers: { authorization: `Bearer ${cfg.resendKey}` } });
-  if (!res.ok) throw new Error(`HTTP ${res.status} (clé en accès complet requise pour lire les e-mails)`);
-}, { optional: true });
+if (cfg.mail.provider === 'mailpit') {
+  await check('Mailpit (lecture des e-mails)', async () => {
+    const res = await fetch(`${cfg.mail.mailpitUrl}/api/v1/info`);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return cfg.mail.mailpitUrl;
+  }, { optional: true });
+} else {
+  await check('clé Resend (lecture des e-mails)', async () => {
+    const res = await fetch('https://api.resend.com/emails?limit=1', { headers: { authorization: `Bearer ${cfg.resendKey}` } });
+    if (!res.ok) throw new Error(`HTTP ${res.status} (clé en accès complet requise pour lire les e-mails)`);
+  }, { optional: true });
+}
 await check('base en lecture seule', async () => {
   const [row] = await query(
     `SELECT current_user AS who, r.rolsuper, r.rolcreatedb, r.rolcreaterole,
