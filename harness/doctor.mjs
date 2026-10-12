@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /** Vérifie les branchements avant une session: `npm run doctor`. Les observateurs (base, Redis, mail) sont optionnels. */
-import { FRONTS, cfg, frontUrl } from './config.mjs';
+import { FRONTS, cfg, frontUrl, selectEnv } from './config.mjs';
 import { query } from './db.mjs';
 import { redis } from './redis.mjs';
 
@@ -15,7 +15,9 @@ async function check(label, fn, { optional = false } = {}) {
   }
 }
 
-console.log(`Cible: ${cfg.domain}\n\nIndispensable`);
+const envIdx = process.argv.indexOf('--env');
+if (envIdx >= 0) selectEnv(process.argv[envIdx + 1]);
+console.log(`Cible: ${cfg.env} (${cfg.domain})\n\nIndispensable`);
 for (const front of FRONTS) {
   await check(`front ${front}`, async () => {
     const res = await fetch(frontUrl(front), { redirect: 'manual', signal: AbortSignal.timeout(10_000) });

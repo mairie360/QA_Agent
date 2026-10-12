@@ -5,6 +5,8 @@ L'agent se compose de trois morceaux, tous standard:
 2. **Un navigateur**: le serveur MCP Playwright (`@playwright/mcp`). C'est ce qui permet de passer par l'interface web.
 3. **Les outils de session et d'observation**: le serveur MCP `qa-observer` de ce dépôt (`mcp/server.mjs`, transport stdio).
 
+Le serveur `qa-observer` cible l'environnement choisi dans la conversation (`env` de `run_start`), sans redémarrage: `.env.staging` et `.env.dev` doivent donc tous deux être remplis si on veut les deux.
+
 Tout outil qui sait lancer des serveurs MCP et suivre des consignes en Markdown peut jouer le rôle de l'agent.
 
 ## Claude Code (le plus simple)

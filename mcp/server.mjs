@@ -10,7 +10,7 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { z } from 'zod';
-import { REQUIRED_SECTIONS, alias, describeRun, journal, snapshot, snapshotDiff, startRun, writeReport, currentRun } from '../harness/run.mjs';
+import { FEATURE_SECTIONS, MISSION_SECTIONS, alias, describeRun, journal, snapshot, snapshotDiff, startRun, writeReport, currentRun } from '../harness/run.mjs';
 import { describe, query, tables } from '../harness/db.mjs';
 import { redis } from '../harness/redis.mjs';
 import { waitForMail } from '../harness/mail.mjs';
@@ -28,10 +28,13 @@ const safe = (fn) => async (args) => {
 server.registerTool(
   'run_start',
   {
-    description: 'À appeler EN PREMIER. Ouvre une session de test: crée l’identifiant, le marqueur [QA-xxxx] à mettre dans tout ce que tu crées, le journal, et donne la date du jour (pour les dates relatives) et les URL des fronts.',
+    description: 'À appeler EN PREMIER. Ouvre une session de test sur un environnement (staging ou dev): crée l’identifiant, le marqueur [QA-xxxx] à mettre dans tout ce que tu crées, le journal, et donne la date du jour (pour les dates relatives), les URL des fronts et les sections attendues du rapport. Deux modes: « mission » (persona + mission écrites dans le dépôt) et « feature » (un développeur te décrit une fonctionnalité à vérifier; persona facultative, tu choisis les profils nécessaires).',
     inputSchema: {
-      persona: z.string().describe('Nom de la persona jouée'),
-      mission: z.string().describe('Mission en une phrase'),
+      mode: z.enum(['mission', 'feature']).optional().describe('mission (défaut) ou feature'),
+      env: z.enum(['staging', 'dev']).optional().describe('Environnement cible; sinon celui par défaut du serveur'),
+      persona: z.string().optional().describe('Mode mission: nom de la persona jouée'),
+      mission: z.string().optional().describe('Mode mission: la mission en une phrase'),
+      feature: z.string().optional().describe('Mode feature: la fonctionnalité à vérifier, telle que le développeur l’a décrite'),
       behavior: z.string().optional().describe('Trait de comportement (pressé, hésitant, lit peu…)'),
     },
   },
@@ -143,7 +146,7 @@ server.registerTool(
 server.registerTool(
   'report_write',
   {
-    description: `À appeler EN DERNIER: enregistre ton auto-évaluation de la session (Markdown). Elle doit contenir ces sections de niveau 2 (##): ${REQUIRED_SECTIONS.join(' ; ')}. Chaque affirmation renvoie à une ligne du journal, une capture ou une requête. Ce qui n’a pas été vérifié est écrit « non vérifié ».`,
+    description: `À appeler EN DERNIER: enregistre ton compte rendu de session (Markdown). Sections de niveau 2 (##) obligatoires — mode mission: ${MISSION_SECTIONS.join(' ; ')} — mode feature: ${FEATURE_SECTIONS.join(' ; ')}. Chaque affirmation renvoie à une ligne du journal, une capture ou une requête. Ce qui n’a pas été vérifié est écrit « non vérifié ».`,
     inputSchema: { markdown: z.string().min(200) },
   },
   safe(({ markdown }) => writeReport(markdown)),
@@ -154,7 +157,7 @@ server.registerTool(
   { description: 'État de la session en cours (actions faites, budget restant, dossier du rapport).', inputSchema: {} },
   safe(() => {
     const run = currentRun();
-    return { runId: run.runId, marker: run.marker, actions: run.actions, remaining: run.maxActions - run.actions, reportDir: run.dir };
+    return { runId: run.runId, marker: run.marker, env: run.env, mode: run.mode, actions: run.actions, remaining: run.maxActions - run.actions, reportDir: run.dir };
   }),
 );
 
